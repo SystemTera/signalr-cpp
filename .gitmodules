@@ -1,0 +1,3 @@
+[submodule "src/ThirdParty/p3-json"]
+	path = src/ThirdParty/p3-json
+	url = https://github.com/p3root/p3-json
