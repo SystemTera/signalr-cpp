@@ -8,13 +8,38 @@ AM_INIT_AUTOMAKE
 AM_MAINTAINER_MODE
 
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_SRCDIR([src/Variant.cpp])
-AC_CONFIG_SRCDIR([src/Json.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Helper.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Log.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/PersistentConnection.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/PersistentConnectionFactory.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Request.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/SignalRServer.cpp])
+
+AC_CONFIG_SRCDIR([src/SignalRServer/Hubs/Group.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Hubs/Hub.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Hubs/HubClientMessage.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Hubs/HubDispatcher.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Hubs/HubFactory.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Hubs/HubGroupList.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Hubs/HubManager.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Hubs/HubSubscriber.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Hubs/HubSubscriberList.cpp])
+
+AC_CONFIG_SRCDIR([src/SignalRServer/Messaging/ClientMessage.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Messaging/Subscriber.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Messaging/SubscriberList.cpp])
+
+AC_CONFIG_SRCDIR([src/SignalRServer/Transports/Transport.cpp])
+AC_CONFIG_SRCDIR([src/SignalRServer/Transports/LongPollingTransport.cpp])
+
+
 AC_CONFIG_MACRO_DIR([m4])
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 
 # Checks for programs.
 AC_PROG_CC
+AC_LANG([C++])
+AX_CXX_COMPILE_STDCXX_11
 AC_PROG_LIBTOOL
 AC_C_INLINE
 AM_PROG_CC_C_O
@@ -33,7 +58,6 @@ AC_TYPE_SIZE_T
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([bzero memset])
 
-
 # Examples build
 AC_ARG_ENABLE([examples-build], [AS_HELP_STRING([--enable-examples-build],
         [build example applications (default n)])],
@@ -44,5 +68,8 @@ AM_CONDITIONAL([BUILD_EXAMPLES], [test "x$build_examples" != "xno"])
 
 AC_CONFIG_FILES([Makefile])
 AC_CONFIG_FILES([src/Makefile])
-AC_CONFIG_FILES([examples/Makefile])
+AC_CONFIG_FILES([src/SignalRServer/Makefile])
+AC_CONFIG_FILES([src/ThirdParty/Makefile])
+AC_CONFIG_FILES([src/ThirdParty/p3-json/Makefile])
+#AC_CONFIG_FILES([examples/Makefile])
 AC_OUTPUT
