@@ -10,6 +10,8 @@ TARGET = SignalRServer
 TEMPLATE = lib
 CONFIG += sharedlib
 
+QMAKE_CXXFLAGS += -std=c++11
+
 DEFINES += SIGNALRSERVER_LIBRARY
 
 SOURCES += SignalRServer.cpp \
@@ -63,10 +65,10 @@ unix {
 
 LIBS += -luuid
 
-unix:!macx: LIBS += -L$$OUT_PWD/../Utils/p3-json/ -lp3-json
-
-INCLUDEPATH += $$PWD/../Utils/p3-json
-DEPENDPATH += $$PWD/../Utils/p3-json
-
 OTHER_FILES += \
     Hubs/MessageInfo.txt
+
+unix:!macx: LIBS += -L$$OUT_PWD/../Utils/ -lp3-json
+
+INCLUDEPATH += $$PWD/../Utils/p3-json/src
+DEPENDPATH += $$PWD/../Utils
