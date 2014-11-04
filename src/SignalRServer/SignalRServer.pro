@@ -61,8 +61,6 @@ unix {
     INSTALLS += target
 }
 
-include(../TeraServer.pri)
-
 LIBS += -luuid
 
 unix:!macx: LIBS += -L$$OUT_PWD/../Utils/p3-json/ -lp3-json
