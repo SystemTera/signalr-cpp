@@ -7,7 +7,7 @@ For questions please send me an email (patrik.pfaffenbauer@p3.co.at) or conatct 
 
 Please clone the repository recursive. Otherwise the submodules will not be cloned, and you can't build the libs.
 
-git clone --recursive https://github.com/p3root/signalr-cpp
+git clone --recursive https://github.com/p3root/signalr-cpp.git
 
 Then just run qmake and make. The Signalr-Server has no dependencies to any Qt Library. I just have developed it using QtCreator. I need to change the build process using automake.
 
