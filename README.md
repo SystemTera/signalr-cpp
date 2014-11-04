@@ -17,7 +17,8 @@ Please see the documentation in the src/SignalRServer/Doc/
 
 Client
 =======
-I currently have implemented a SignalR Client using the Qt Framework. Maybe I'm going to implement an C++ client using the stl.
+I currently have implemented a SignalR Client using the Qt Framework (https://github.com/p3root/signalr-qt). 
+Maybe I'm going to implement an C++ client using the stl.
 
 LICENSE
 ======
