@@ -3,7 +3,7 @@ SignalR-cpp
 
 This is an C++ implementation of Microsofts ASP.Net SignalR-Server. (https://github.com/SignalR).
 
-For questions please send me an email (patrik.pfaffenbauer@p3.co.at) or conatct me via skype (patrik.pfaffenbauer)
+For questions please send me an email (patrik.pfaffenbauer@p3.co.at).
 
 Please clone the repository recursive. Otherwise the submodules will not be cloned, and you can't build the libs.
 
@@ -23,8 +23,7 @@ Maybe I'm going to implement an C++ client using the stl.
 LICENSE
 ======
 
-Copyright (c) 2014, p3root - Patrik Pfaffenbauer (patrik.pfaffenbauer@p3.co.at) and
-Norbert Kleininger
+Copyright (c) 2014 by BeKa Software GmbH
 All rights reserved.
  
 Redistribution and use in source and binary forms, with or without modification,
