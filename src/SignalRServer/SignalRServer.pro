@@ -68,30 +68,10 @@ HEADERS += \
     Transports/ServerSentEventsTransport.h
 
 unix {
-    signalrserver.files = $$PUBLIC_HEADERS
-    signalrserver.extra = mkdir $INSTALL_ROOT/lib/include/SystemTera/SignalRServer -p
-    signalrserver.path = /lib/include/SystemTera/SignalRServer
-
-    hubs.files = $$HUB_HEADERS
-    hubs.extra = mkdir $INSTALL_ROOT/lib/include/SystemTera/SignalRServer/Hubs -p
-    hubs.path = /lib/include/SystemTera/SignalRServer/Hubs
-
-    msg.files = $$MESS_HEADERS
-    msg.extra = mkdir $INSTALL_ROOT/lib/include/SystemTera/SignalRServer/Messaging -p
-    msg.path = /lib/include/SystemTera/SignalRServer/Messaging
-
-    INSTALL_HEADERS {
-        INSTALLS += signalrserver hubs msg
-    }
-    DEV_MACHINE {
-        QMAKE_POST_LINK += cd $$OUT_PWD && make INSTALL_ROOT=$$SYSTEMTERA_ROOT install
-    }
-
     target.path = /lib
     INSTALLS += target
 }
 
-include(../TeraServer.pri)
 
 LIBS += -luuid
 
