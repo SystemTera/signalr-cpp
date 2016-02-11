@@ -9,6 +9,13 @@ Please clone the repository recursive. Otherwise the submodules will not be clon
 
 git clone --recursive https://github.com/BeKa-Software/signalr-cpp.git
 
+First build p3json libary:
+
+cd src/Utils/p3-json
+./autogen.sh
+make
+make install
+
 Then just run qmake and make. The Signalr-Server has no dependencies to any Qt Library. I just have developed it using QtCreator. I need to change the build process using automake.
 
 Server
