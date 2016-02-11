@@ -12,6 +12,8 @@ CONFIG += sharedlib
 
 DEFINES += SIGNALRSERVER_LIBRARY
 
+QMAKE_CXXFLAGS += -std=c++11
+
 SOURCES += SignalRServer.cpp \
     PersistentConnection.cpp \
     Request.cpp \
@@ -73,12 +75,10 @@ unix {
 }
 
 
-LIBS += -luuid
+LIBS += -luuid -L/usr/local/lib/ -lp3json
 
-unix:!macx: LIBS += -L$$OUT_PWD/../Utils/p3-json/ -lp3-json
-
-INCLUDEPATH += $$PWD/../Utils/p3-json
-DEPENDPATH += $$PWD/../Utils/p3-json
+INCLUDEPATH += /usr/local/include/libp3json-1.0
+DEPENDPATH += /usr/local/lib/
 
 OTHER_FILES += \
     Hubs/MessageInfo.txt
