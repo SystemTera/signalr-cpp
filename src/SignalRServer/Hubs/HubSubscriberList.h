@@ -50,14 +50,12 @@ public:
     HubSubscriberList client(const char* connectionId);
     HubSubscriberList byHub(const char* hubName);
     bool contains(Subscriber *s);
+    bool exists(const char* hubName, const char* connectionId);
     void send(const char *hub, const char *func, VariantList &args);
     void send(Hub *h, const char* func, VariantList& args);
     void subscribe(const char* hubName, const char* connectionId);
     void unsubscribe(const char* connectionId);
-    bool exists(const char* hubName, const char* connectionId);
     std::string generateKey();
-
-
 };
 
 }}}

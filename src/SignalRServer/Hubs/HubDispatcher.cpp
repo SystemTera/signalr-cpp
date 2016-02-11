@@ -10,7 +10,8 @@
 
 namespace P3 { namespace SignalR { namespace Server {
 
-HubDispatcher::HubDispatcher()
+HubDispatcher::HubDispatcher(int responseDelyMs)
+    : PersistentConnection(responseDelyMs)
 {
 
 
@@ -45,7 +46,7 @@ void HubDispatcher::onConnected(Request *request, const char* connectionId)
     }
 }
 
-void HubDispatcher::onReconnected(Request *request, const char* )
+void HubDispatcher::onReconnected(Request *request, const char* connectionId)
 {
     //TODO: check if connectionId is not faulted, if faulted send "D" : 1
     SignalRHubServer* hubServer =  (SignalRHubServer*)_server;
@@ -62,6 +63,8 @@ void HubDispatcher::onReconnected(Request *request, const char* )
         Hub* hub = hubServer->createHub(hubName.c_str(), this, request);
         if (hub)
         {
+            Hub::getHubManager().getSubscribers().subscribe(hubName.c_str(),connectionId);
+
             hub->handleReconnected();
         }
     }

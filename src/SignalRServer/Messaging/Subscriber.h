@@ -50,7 +50,7 @@ public:
     void postClientMessage(ClientMessage* msg);
     void clearPendingMessages();
 
-    list<ClientMessage *> &clientMessages();
+    list<ClientMessage *> clientMessages();
 
     ClientMessage* getNextMessage(int lastMessageId);
     void removeMessage(ClientMessage* msg);
@@ -58,14 +58,14 @@ public:
     void lock() { pthread_mutex_lock(&_lock); }
     void unlock() { pthread_mutex_unlock(&_lock); }
 
-    void signalSemaphore();
-    void attachToSemaphore(sem_t* s);
-    void detachFromSemaphore();
+    void signalSemaphores();
+    void attachToSemaphore(sem_t* semaphore);
+    void detachFromSemaphore(sem_t* semaphore);
 
     std::string key() { return _key; }
 
 private:
-    sem_t* _sem;
+    list<sem_t*> _semaphores;
     pthread_mutex_t _lock;
     pthread_mutexattr_t _attr;
 

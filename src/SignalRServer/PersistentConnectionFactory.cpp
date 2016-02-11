@@ -9,12 +9,18 @@ namespace P3 { namespace SignalR { namespace Server {
 
 PersistentConnectionFactory::PersistentConnectionFactory()
 {
+    _delayMs = 0;
 }
 
 
 PersistentConnection* PersistentConnectionFactory::createInstance()
 {
-    return new PersistentConnection();
+    return new PersistentConnection(_delayMs);
+}
+
+void PersistentConnectionFactory::setRepsonseDelay(int delayMs)
+{
+    _delayMs = delayMs;
 }
 
 
@@ -27,7 +33,7 @@ HubDispatcherFactory::HubDispatcherFactory()
 
 PersistentConnection* HubDispatcherFactory::createInstance()
 {
-    return new HubDispatcher();
+    return new HubDispatcher(_delayMs);
 }
 
 }}}

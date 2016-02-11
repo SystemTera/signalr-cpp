@@ -25,8 +25,9 @@ namespace P3 { namespace SignalR { namespace Server {
 // =================================== PERSISTENT CONNECTION CLASS ===============================
 
 
-PersistentConnection::PersistentConnection()
+PersistentConnection::PersistentConnection(int delayResponseMs)
 {
+    _delayResponseMs = delayResponseMs;
     _connfd = 0;
     _server = NULL;
     _connectionId = "";
@@ -49,18 +50,19 @@ PersistentConnection::~PersistentConnection()
 
 bool PersistentConnection::authorizeRequest(Request* r)
 {
-    if (server()->credentials().size()<=0)
-        return true; // Nothing to authorize
-
+    server()->lock_credentials();
+    bool retVal = false;
     for (UserCredential*  u : server()->credentials())
     {
-        if (r->user()==u->username() && r->password()==u->password())
+        if (u->isAuthorized(r->user(), r->password()))
         {
-            return true;
+            retVal = true;
+            break;
         }
     }
 
-    return false;
+    server()->unlock_credentials();
+    return retVal;
 }
 
 
@@ -204,7 +206,7 @@ bool PersistentConnection::writeData(const char* buffer, int retcode)
 
     buflen = strlen(buffer);
 
-    strcpy(header, "HTTP/1.0");
+    strcpy(header, "HTTP/1.1");
     sprintf(val," %d ", retcode);
     strcat(header,val);
     switch (retcode)
@@ -234,9 +236,131 @@ bool PersistentConnection::writeData(const char* buffer, int retcode)
     Log::GetInstance()->Write(buffer, LOGLEVEL_TRACE);
 
 
+    if(_delayResponseMs > 0)
+        usleep(1000*_delayResponseMs);
+
     signal(SIGPIPE, SIG_IGN); // supress signal if other socket is already closed
     write(_connfd, header, strlen(header));
     write(_connfd, buffer, strlen(buffer));
+
+    return true;
+}
+
+bool PersistentConnection::writeServerSentEventsInitialization()
+{
+    int writeResult;
+    char response[256];
+
+    strcpy(response, "HTTP/1.1 200 OK\r\n");
+    strcat(response, "Cache-Control: no-cache\r\n");
+    strcat(response, "Pragma: no-cache\r\n");
+    strcat(response, "Transfer-Encoding: chunked\r\n");
+    strcat(response, "Content-Type: text/event-stream\r\n");
+    strcat(response, "Expires: -1\r\n");
+    strcat(response, "\r\n");
+    strcat(response, "13\r\n");
+    strcat(response, "data: initialized");
+
+    Log::GetInstance()->Write("<<", LOGLEVEL_TRACE);
+    Log::GetInstance()->Write(response, LOGLEVEL_TRACE);
+
+    strcat(response, "\r\n\r\n");
+
+    if(_delayResponseMs > 0)
+        usleep(1000*_delayResponseMs);
+
+    signal(SIGPIPE, SIG_IGN); // supress signal if other socket is already closed
+    writeResult = write(_connfd, response, strlen(response));
+    if (!writeResult)
+        return false;
+
+    return true;
+}
+
+bool PersistentConnection::writeServerSentEventsChunk(const char* chunkData)
+{
+    if(_delayResponseMs > 0)
+        usleep(1000*_delayResponseMs);
+
+    // We have to split the chunkData on each occurence of \r\n
+    // Then we have to add length informationen (in hex)
+    // Example
+    //  This is a two line\r\n
+    //  example...\r\n
+    // Example result:
+    //  12\r\n
+    //  This is a two line\r\n
+    //  a\r\n
+    //  example...\r\n
+
+    Log::GetInstance()->Write("<<", LOGLEVEL_TRACE);
+
+    bool writeResult;
+    int len;
+    char *line;
+    const char *curPos;
+    const char *newLine;
+    line = 0;
+    curPos = chunkData;
+    newLine = strstr(chunkData, "\r\n");
+    while (newLine)
+    {
+        len = newLine - curPos;
+        line = strndup(curPos, len);
+        writeResult = writeServerSentEventsChunkLine(len, line);
+        if (line)
+            free(line);
+
+        if (!writeResult)
+            return false;
+
+        curPos = newLine + 2;
+        newLine = strstr(curPos, "\r\n");
+    }
+    if (curPos < chunkData + strlen(chunkData))
+    {
+        len = chunkData + strlen(chunkData) - curPos;
+        line = strndup(curPos, len);
+        writeResult = writeServerSentEventsChunkLine(len, line);
+        if (line)
+            free(line);
+
+        if (!writeResult)
+            return false;
+    }
+
+
+    // Write end of chunk
+    signal(SIGPIPE, SIG_IGN); // supress signal if other socket is already closed
+    writeResult = write(_connfd, "\r\n", 2);
+    if (!writeResult)
+        return false;
+
+    return true;
+}
+
+bool PersistentConnection::writeServerSentEventsChunkLine(int len, const char* line)
+{
+    int writeResult;
+
+    char lenStr[18];
+    snprintf(lenStr, sizeof(lenStr - 2), "%x", len + 2);
+    Log::GetInstance()->Write(lenStr, LOGLEVEL_TRACE);
+    strcat(lenStr, "\r\n");
+    signal(SIGPIPE, SIG_IGN); // supress signal if other socket is already closed
+    writeResult = write(_connfd, lenStr, strlen(lenStr));
+    if (writeResult < 0)
+        return false;
+
+    Log::GetInstance()->Write(line, LOGLEVEL_TRACE);
+    signal(SIGPIPE, SIG_IGN); // supress signal if other socket is already closed
+    writeResult = write(_connfd, line, strlen(line));
+    if (writeResult < 0)
+        return false;
+    writeResult = write(_connfd, "\r\n", 2);
+    if (writeResult < 0)
+        return false;
+
     return true;
 }
 
@@ -338,7 +462,7 @@ std::string PersistentConnection::encodeGroupsToken(std::list<std::string>* grou
     return protectGroupsToken(sgroups.c_str());
 }
 
-void PersistentConnection::writeResponse(Request* , bool bInitializing, bool bReconnect, std::list<std::string> *groups, int longPollDelay, list<ClientMessage*>* messages, const char* messageIds)
+std::string PersistentConnection::createResponse(Request* , bool bInitializing, bool bReconnect, std::list<std::string> *groups, int longPollDelay, list<ClientMessage*>* messages, const char* messageIds)
 {
     VariantMap resp;
     std::string mid = Helper::NullToEmpty(messageIds);
@@ -353,7 +477,7 @@ void PersistentConnection::writeResponse(Request* , bool bInitializing, bool bRe
     }
     if (bReconnect)
     {
-        resp.insert(VARIANT_PAIR("D", 1));  // This is set when the host is shutting down.
+        resp.insert(VARIANT_PAIR("T", 1));  // This is set when the host is shutting down.
     }
 
     // Get the old groups from query string
@@ -390,7 +514,7 @@ void PersistentConnection::writeResponse(Request* , bool bInitializing, bool bRe
 
     Variant ret = Variant::fromValue(resp);
     std::string json = Json::stringify(ret);
-    writeData(json.c_str());
+    return json;
 }
 
 void PersistentConnection::handleConnected(Request* request, const char* connectionId)
@@ -429,6 +553,9 @@ void PersistentConnection::handleDisconnected(Request* request, const char* conn
 
 void PersistentConnection::processRequest(Request* request)
 {
+    if(!_server->isRunning())
+        return;
+
     string connectionToken;
     Transport* transport = NULL;
 
@@ -466,7 +593,7 @@ void PersistentConnection::processRequest(Request* request)
         _groupsToken = request->getParameter("groupsToken");
         if (_groupsToken!="")
         {
-            Log::GetInstance()->Write("Group token found", LOGLEVEL_WARN);
+            Log::GetInstance()->Write("Group token found", LOGLEVEL_DEBUG);
 
             // decode the groups token
             _groupsToken = unprotectGroupsToken(_groupsToken.c_str());
@@ -509,13 +636,11 @@ void PersistentConnection::processRequest(Request* request)
         {
             transport->setConnectionId(_connectionId);
 
-
-            // This is transport specific
-            transport->processRequest(this, request);
+            if(_server->isRunning())
+                transport->processRequest(this, request);// This is transport specific
 
         }
-        catch(...)
-        {
+        catch(...) {
             Log::GetInstance()->Write("An exception occured in transporting.", LOGLEVEL_ERROR);
         }
 

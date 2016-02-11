@@ -34,6 +34,7 @@
 
 #include <list>
 #include <string>
+#include <algorithm>
 
 #define SIGNALR_SOCKETS_BSD     0
 #define SIGNALR_SOCKETS_UNIX    1
@@ -65,18 +66,22 @@ typedef struct tagConnOptions
 class UserCredential
 {
 public:
-    UserCredential(const char* username, const char* password) { _username = username; _password = password; }
+    UserCredential(const char* username, const char* password) { _username = makeLower(username); _password = password; }
     virtual ~UserCredential() { }
 
 private:
     std::string _username;
     std::string _password;
 
+    std::string makeLower(const std::string& in)
+    {
+        std::string out;
+        std::transform(in.begin(), in.end(), std::back_inserter(out), ::tolower);
+        return out;
+    }
+
 public:
-    void setUsername(const char *username) { _username = username; }
-    void setPassword(const char *password) { _password = password; }
-    std::string username() { return _username; }
-    std::string password() { return _password; }
+    bool isAuthorized(const std::string& username, const std::string& password) { return _username == makeLower(username) && _password == password; }
 };
 
 
@@ -128,28 +133,28 @@ public:
 
     void addPersistentConnection(PersistentConnection* pc)
     {
+        lock();
         if (!containsPersistentConnection(pc))
         {
-            lock();
             _pcs.push_back(pc);
-            unlock();
         }
+        unlock();
     }
 
     void removePersistentConnection(PersistentConnection* pc)
     {
+        lock();
         if (containsPersistentConnection(pc))
         {
-            lock();
             _pcs.remove(pc);
-            unlock();
         }
+        unlock();
     }
 
     time_t &start() { return _start; }
-    time_t timeout() { return _start+_timeout; }
-    void setStart(time_t t) { _start=t; }
-    void reset() { time(&_start); }
+    time_t timeout() { time_t result; lock(); result = _start+_timeout; unlock(); return result; }
+    void setStart(time_t t) { lock(); _start=t; unlock(); }
+    void reset() { lock(); time(&_start); unlock(); }
 
     bool exceeded() { time_t cur; time(&cur); return (cur>timeout()); }
     int waittime() { int s; time_t cur; time(&cur); s = timeout()-cur; if (s<0) s=0; return s; }
@@ -171,6 +176,9 @@ protected:
     bool _bRun;
     PersistentConnectionFactory* _connFactory;
     std::list<UserCredential*> _credentials;
+    pthread_mutex_t _credentials_lock;
+    pthread_mutexattr_t _creadentials_attr;
+
     int _maxThreads;
     int _currThreads;
 
@@ -184,6 +192,9 @@ protected:
     pthread_mutex_t _lock_info;
     pthread_mutexattr_t _attr_info;
 
+    pthread_mutex_t _lock_brun;
+    pthread_mutexattr_t brun_info;
+
     sem_t _sem_wd;
     sem_t _sem_quit;
 
@@ -193,11 +204,13 @@ protected:
     void initOptions();
 public:
     SignalRServer();
-    SignalRServer(PersistentConnectionFactory* factory, int maxThreads=10);
+    SignalRServer(PersistentConnectionFactory* factory, int maxThreads=100);
     virtual ~SignalRServer();
 
-    void inc() { _currThreads++; }
-    void dec() { _currThreads--; }
+    void inc() { lock_conn(); _currThreads++; unlock_conn(); }
+    void dec() { lock_conn(); _currThreads--; unlock_conn(); }
+    int getCurrThreads() { lock_conn(); int result = _currThreads; unlock_conn(); return result; }
+
 
     bool startWatchdog();
     void startConnectionInfo(const char* connectionId, PersistentConnection* pc);
@@ -213,6 +226,9 @@ public:
 
     void lock_conn() { pthread_mutex_lock(&_lock_conn); }
     void unlock_conn() { pthread_mutex_unlock(&_lock_conn); }
+
+    void lock_credentials();
+    void unlock_credentials();
 
     void onWatchDog();
     PersistentConnectionInfo* popSmallestWaittime();
@@ -238,6 +254,7 @@ public:
 
     virtual void onSetConnectionOption(int connfd);
     std::list<UserCredential*>& credentials() { return _credentials; }
+    void clearCredentials();
     bool stop(int timeout_ms=1000);
     bool isRunning() { return _bRun; }
 };
@@ -250,8 +267,10 @@ public:
 class SignalRHubServer : public SignalRServer
 {
 public:
-    SignalRHubServer(HubFactory* hubfactory, int maxThreads=10);
+    SignalRHubServer(HubFactory* hubfactory, int maxThreads=100);
     virtual ~SignalRHubServer();
+
+    void setResponseDelayTimeout(int delayMs);
 
 protected:
     HubFactory* _hubFactory;

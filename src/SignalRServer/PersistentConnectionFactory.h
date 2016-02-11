@@ -43,6 +43,11 @@ public:
 
 public:
     virtual PersistentConnection* createInstance();
+
+    void setRepsonseDelay(int delayMs);
+
+protected:
+    int _delayMs;
 };
 
 

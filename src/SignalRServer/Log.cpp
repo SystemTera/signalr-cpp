@@ -15,7 +15,7 @@ Log::Log()
     m_loglevel = LOGLEVEL_WARN;
     m_callback = NULL;
     m_cbData = NULL;
-    m_useFileLog = true;
+    m_useFileLog = false;
 }
 
 

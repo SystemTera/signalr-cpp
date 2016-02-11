@@ -3,6 +3,7 @@
 #include "HubClientMessage.h"
 #include "Hub.h"
 #include "HubManager.h"
+#include "Log.h"
 
 #include "GarbageCollector.h"
 
@@ -44,6 +45,7 @@ void HubSubscriberList::send(Hub *h, const char *func, VariantList &args)
     for (Subscriber* sub : *this)
     {
         HubSubscriber *hsub = (HubSubscriber*)sub;
+        Log::GetInstance()->Write(("HubSubscriberList::send to " + hsub->hubName()).c_str(), LOGLEVEL_DEBUG);
         ClientMessage* m = new HubClientMessage(h->hubName().c_str(), func, args);
         m->setMessageId(hsub->generateMessageId());
         hsub->postClientMessage(m);
@@ -112,8 +114,8 @@ HubSubscriberList HubSubscriberList::groups(std::vector<std::string>& groups)
 HubSubscriberList HubSubscriberList::othersInGroup(Hub* hub,const char* g)
 {
     HubSubscriberList result;
-    HubSubscriberList subs = group(g);
     lock();
+    HubSubscriberList subs = group(g);
     for (Subscriber *s:subs)
     {
         if (s->connectionId()!=hub->connectionId())
@@ -126,8 +128,8 @@ HubSubscriberList HubSubscriberList::othersInGroup(Hub* hub,const char* g)
 HubSubscriberList HubSubscriberList::othersInGroups(Hub* hub,std::vector<std::string>& gr)
 {
     HubSubscriberList result;
-    HubSubscriberList subs = groups(gr);
     lock();
+    HubSubscriberList subs = groups(gr);
     for (Subscriber *s:subs)
     {
         if (s->connectionId()!=hub->connectionId())
@@ -204,13 +206,13 @@ bool HubSubscriberList::exists(const char* hubName, const char* connectionId)
 
 void HubSubscriberList::subscribe(const char* hubName, const char* connectionId)
 {   
+    lock();
     if (!exists(hubName,connectionId))
     {
-        lock();
         HubSubscriber* sub = new HubSubscriber(hubName,connectionId);
         push_back(sub);
-        unlock();
-    }    
+    }
+    unlock();
 }
 
 void HubSubscriberList::unsubscribe(const char* connectionId)
@@ -224,7 +226,7 @@ void HubSubscriberList::unsubscribe(const char* connectionId)
         if (sub->connectionId()==connectionId)
         {
             SubscriberGarbage::getInstance().add(sub);
-            sub->signalSemaphore(); // Signal to stop any waiting subscriptions
+            sub->signalSemaphores(); // Signal to stop any waiting subscriptions
 
             erase(i++);
         }

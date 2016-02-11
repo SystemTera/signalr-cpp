@@ -48,9 +48,9 @@
 // Note: this parameters must be configurable over properties
 
 #define DEFAULT_TRANSPORT_CONNECTIONTIMEOUT 5    // seconds
-#define DEFAULT_KEEPALIVE_TIMEOUT           30   // seconds
-#define DEFAULT_DISCONNECT_TIMEOUT          30   // seconds
-#define DEFAULT_LONGPOLLDELAY               0    // seconds
+#define DEFAULT_KEEPALIVE_TIMEOUT           40   // seconds
+#define DEFAULT_DISCONNECT_TIMEOUT          40   // seconds
+#define DEFAULT_LONGPOLLDELAY               20   // seconds
 #define DEFAULT_TRYWEBSOCKETS               false
 
 
@@ -84,6 +84,8 @@ public:
     int _longPollDelay;
     bool _tryWebSockets;
 
+    int _delayResponseMs;
+
     string _connectionId;
     string _groupsToken;
     string _messageId;
@@ -92,12 +94,14 @@ public:
     bool _hasFinished;
     timespec _finishTime;
 public:
-    PersistentConnection();
+    PersistentConnection(int delayResponseMs=0);
     virtual ~PersistentConnection();
 
 public:
     void processRequest(Request* request);
     bool writeData(const char* buffer="", int retcode=200);
+    bool writeServerSentEventsInitialization();
+    bool writeServerSentEventsChunk(const char* chunkData="");
 
 private:
     bool isStartRequest(Request* request);
@@ -118,9 +122,10 @@ private:
     std::list<string> splitGroupsToken(const char* token);
     std::list<string> findRemovedGroups(std::list<std::string>* oldGroups, std::list<std::string>* newGroups);
     std::list<string> findAddedGroups(std::list<std::string>* oldGroups, std::list<std::string>* newGroups);
+    bool writeServerSentEventsChunkLine(int len, const char* line);
 
 public:
-    void writeResponse(Request* request, bool bInitializing=false, bool bReconnect=false, std::list<std::string> *groups=NULL, int longPollDelay=0, list<ClientMessage*>* messages = NULL, const char* messageIds = NULL);
+    std::string createResponse(Request* request, bool bInitializing=false, bool bReconnect=false, std::list<std::string> *groups=NULL, int longPollDelay=0, list<ClientMessage*>* messages = NULL, const char* messageIds = NULL);
     void handleConnected(Request* request, const char* connectionId);
     void handleReconnected(Request* request, const char* connectionId);
     string handleReceived(Request* request, const char* connectionId, const char* data);

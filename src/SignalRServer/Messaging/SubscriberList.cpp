@@ -18,8 +18,6 @@ SubscriberList::~SubscriberList()
     pthread_mutex_destroy(&_lock);
 }
 
-
-
 Subscriber* SubscriberList::getFirst(const char* connectionId)
 {
     Subscriber* ret=NULL;

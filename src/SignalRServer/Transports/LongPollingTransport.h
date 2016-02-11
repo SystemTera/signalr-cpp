@@ -46,18 +46,14 @@ public:
 
 public:
     void doProcessRequest(PersistentConnection* conn, Request* request) override;
-    void signalMessages();
 
 protected:
-    bool isSendRequest(Request* request);
     bool isPollRequest(Request* request);
 
-    void processSendRequest(PersistentConnection* conn, Request* request);
     void processLongPoll(PersistentConnection* conn, Request* request);
     void processAbortRequest(PersistentConnection* conn, Request* request) override;
     void processConnectRequest(PersistentConnection* conn, Request* request) override;
     string stripHubName(string& json);
-    void waitAnySubscriberMessagesOrTimeout(list<Subscriber*>& subs, int timeout);
     int getLastMsgIdFromCursors(const char* cursor, Subscriber* sub);
     std::string makeCursorKey(const char* name);
 };

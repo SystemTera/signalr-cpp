@@ -29,8 +29,10 @@
 
 #ifndef TRANSPORT_H
 #define TRANSPORT_H
-
+#include <semaphore.h>
 #include <string>
+
+#include "Hubs/HubSubscriber.h"
 
 using namespace std;
 namespace P3 { namespace SignalR { namespace Server {
@@ -42,7 +44,7 @@ class Transport
 {
 public:
     Transport();
-    virtual ~Transport() {};
+    virtual ~Transport() {}
 
 public:
     static Transport* createInstance(const char* name);
@@ -56,11 +58,14 @@ protected:
     virtual bool isAbortRequest(Request* request);
     virtual bool isConnectRequest(Request* request);
     virtual bool isReconnectRequest(Request* request);
+    virtual bool isSendRequest(Request* request);
 
     virtual void processAbortRequest(PersistentConnection* conn, Request* request);
     virtual void processConnectRequest(PersistentConnection* conn, Request* request);
     virtual void processReconnectRequest(PersistentConnection* conn, Request* request);
+    virtual void processSendRequest(PersistentConnection* conn, Request* request);
 
+    void waitAnySubscriberMessagesOrTimeout(list<Subscriber*>& subs, int timeout);
 
 protected:
     string _connectionId;

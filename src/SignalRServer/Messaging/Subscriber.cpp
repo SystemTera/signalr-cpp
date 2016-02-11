@@ -3,6 +3,7 @@
 #include "Helper.h"
 #include "Hubs/Hub.h"
 #include "Hubs/HubManager.h"
+#include "Log.h"
 
 #include <unistd.h>
 
@@ -16,7 +17,6 @@ Subscriber::Subscriber(const char* connectionId)
     pthread_mutexattr_settype(&_attr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&_lock, &_attr);
 
-    _sem = NULL;
     _key = Hub::getHubManager().getSubscribers().generateKey();
 }
 
@@ -34,28 +34,35 @@ const string &Subscriber::connectionId() const
 }
 
 
-void Subscriber::signalSemaphore()
+void Subscriber::signalSemaphores()
 {
-    if (_sem)
-        sem_post(_sem);
+    lock();
+    for (sem_t* semaphore: _semaphores)
+        sem_post(semaphore);
+    unlock();
 }
 
-void Subscriber::attachToSemaphore(sem_t* s)
+void Subscriber::attachToSemaphore(sem_t* semaphore)
 {
-    _sem = s;
+    lock();
+    _semaphores.push_back(semaphore);
+    unlock();
 }
 
-void Subscriber::detachFromSemaphore()
+void Subscriber::detachFromSemaphore(sem_t* semaphore)
 {
-    _sem = NULL;
+    lock();
+    _semaphores.remove(semaphore);
+    unlock();
 }
 
 
 void Subscriber::postClientMessage(ClientMessage* msg)
 {
     lock();
+    Log::GetInstance()->Write(("_clientMessages.push_back '" + msg->clientMethod() + "' to connection " + connectionId()).c_str(), LOGLEVEL_DEBUG);
     _clientMessages.push_back(msg);
-    signalSemaphore();
+    signalSemaphores();
     unlock();
 }
 
@@ -72,9 +79,12 @@ void Subscriber::clearPendingMessages()
     unlock();
 }
 
-list<ClientMessage *> &Subscriber::clientMessages()
+list<ClientMessage *> Subscriber::clientMessages()
 {
-    return _clientMessages;
+    lock();
+    list<ClientMessage *> result = _clientMessages;
+    unlock();
+    return result;
 }
 
 
@@ -85,22 +95,25 @@ ClientMessage* Subscriber::getNextMessage(int lastMessageId)
     lock();
 
     // Get the 1st message for the given connectionid for all hubs
-    for (ClientMessage* msg : clientMessages())
+    if (lastMessageId != -1)
     {
-        if (lastMessageId == msg->messageId())
+        for (ClientMessage* msg : _clientMessages)
         {
-            ret = msg;
-            break;
+            if (lastMessageId == msg->messageId())
+            {
+                ret = msg;
+                break;
+            }
         }
     }
 
-    unlock();
-
     // If we did not find the desired next message, we take the first from the queue
-    if (ret==NULL && clientMessages().size()>0)
+    if (ret==NULL && _clientMessages.size()>0)
     {
-        ret = *(clientMessages().begin());
+        ret = *(_clientMessages.begin());
     }
+
+    unlock();
 
     return ret;
 }
@@ -109,7 +122,7 @@ ClientMessage* Subscriber::getNextMessage(int lastMessageId)
 void Subscriber::removeMessage(ClientMessage* msg)
 {
     lock();
-    clientMessages().remove(msg);
+    _clientMessages.remove(msg);
     unlock();
 }
 

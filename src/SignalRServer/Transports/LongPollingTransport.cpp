@@ -6,6 +6,7 @@
 #include "Hubs/HubManager.h"
 #include "Messaging/ClientMessage.h"
 #include "SignalRServer.h"
+#include "Log.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -25,11 +26,6 @@ LongPollingTransport::~LongPollingTransport()
 }
 
 
-bool LongPollingTransport::isSendRequest(Request* request)
-{
-    return Helper::endWith(request->uri(),"/send");
-}
-
 bool LongPollingTransport::isPollRequest(Request* request)
 {
     return Helper::endWith(request->uri(),"/poll");
@@ -37,7 +33,8 @@ bool LongPollingTransport::isPollRequest(Request* request)
 
 void LongPollingTransport::processConnectRequest(PersistentConnection* conn, Request* request)
 {
-    conn->writeResponse(request, true); // Initialized=true!
+    std::string response = conn->createResponse(request, true); // Initialized=true!
+    conn->writeData(response.c_str());
 }
 
 
@@ -52,15 +49,6 @@ void LongPollingTransport::processAbortRequest(PersistentConnection* conn, Reque
     conn->writeData();
 }
 
-// Call of remote procedure on server
-void LongPollingTransport::processSendRequest(PersistentConnection* conn, Request* request)
-{
-    string data = Helper::decode(request->body().c_str());
-
-    string ret = conn->handleReceived(request,_connectionId.c_str(),data.c_str());
-    conn->writeData(ret.c_str());
-}
-
 string LongPollingTransport::stripHubName(string& json)
 {
     Variant v = Json::parse(json);
@@ -69,39 +57,6 @@ string LongPollingTransport::stripHubName(string& json)
     // [{"Name":"Chat"}]
     string hubName = msg.at(0).toVariantMap()["Name"].toString();
     return hubName;
-}
-
-
-void LongPollingTransport::waitAnySubscriberMessagesOrTimeout(list<Subscriber*>& subs, int timeout)
-{
-    struct timespec ts;
-    int count=0;
-    sem_t sem;
-
-    // Are there any messages from old cycles?
-    for (Subscriber* s : subs)
-    {
-        count += s->clientMessages().size();
-    }
-
-    if (count==0)
-    {
-        // set the timeout
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += timeout;
-
-        sem_init(&sem, 0, 0);
-
-        for (Subscriber* s : subs)
-            s->attachToSemaphore(&sem);
-
-        sem_timedwait(&sem, &ts);
-
-        for (Subscriber* s : subs)
-            s->detachFromSemaphore();
-
-        sem_destroy(&sem);
-    }
 }
 
 
@@ -180,12 +135,13 @@ void LongPollingTransport::processLongPoll(PersistentConnection* conn, Request* 
 
                 // Remove message from queue
                 sub->removeMessage(m);
-                break;
             }
         }
     }
-    else {
-        conn->writeResponse(request,false,true,&groups, 0, &messages, nextMessageIds.c_str());
+    else
+    {
+        std::string resp = conn->createResponse(request,false,true,&groups, 0, &messages, nextMessageIds.c_str());
+        conn->writeData(resp.c_str());
         return;
     }
 
@@ -195,9 +151,10 @@ void LongPollingTransport::processLongPoll(PersistentConnection* conn, Request* 
         bReconnect = true;
 
     // Write the response
-    conn->writeResponse(request,false,bReconnect,&groups, 0, &messages, nextMessageIds.c_str());
+    std::string response = conn->createResponse(request,false,bReconnect,&groups, 0, &messages, nextMessageIds.c_str());
+    conn->writeData(response.c_str());
 
-    // Call constructors
+    // Call destructors
     for (ClientMessage* m: messages)
         delete m;
 }
@@ -213,6 +170,10 @@ void LongPollingTransport::doProcessRequest(PersistentConnection* conn, Request*
     {
         conn->server()->touchConnectionInfo(conn->_connectionId.c_str(), conn);
         processLongPoll(conn, request);        
+    }
+    else
+    {
+        Log::GetInstance()->Write(("LongPollingTransport::doProcessRequest unknown request: " + request->uri()).c_str(), LOGLEVEL_DEBUG);
     }
 }
 

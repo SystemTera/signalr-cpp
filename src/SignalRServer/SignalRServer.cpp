@@ -75,6 +75,14 @@ void SignalRServer::initOptions()
     pthread_mutexattr_settype(&_attr_conn, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&_lock_conn, &_attr_conn);
 
+    pthread_mutexattr_init(&_creadentials_attr);
+    pthread_mutexattr_settype(&_creadentials_attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&_credentials_lock, &_creadentials_attr);
+
+    pthread_mutexattr_init(&brun_info);
+    pthread_mutexattr_settype(&brun_info, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&_lock_brun, &brun_info);
+
     sem_init(&_sem_wd, 0, 0);
     sem_init(&_sem_quit, 0, 0);
 
@@ -84,7 +92,7 @@ void SignalRServer::initOptions()
 SignalRServer::SignalRServer()
 {
     _bRun = true;
-    _maxThreads = 10;
+    _maxThreads = 100;
     _currThreads = 0;
     _connFactory = new PersistentConnectionFactory();
     initOptions();
@@ -102,8 +110,9 @@ SignalRServer::SignalRServer(PersistentConnectionFactory* factory, int maxThread
 
 SignalRServer::~SignalRServer()
 {
-    if (_connFactory)
-        delete _connFactory;
+    delete _connFactory;
+
+    clearCredentials();
 
     pthread_mutexattr_destroy(&_attr_info);
     pthread_mutex_destroy(&_lock_info);    
@@ -143,25 +152,31 @@ void SignalRServer::run(int listenfd)
     while(isRunning())
     {
         connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
+
+        if(!_bRun)
+            break;
+
         if (connfd==-1)
         {
             if (errno==EWOULDBLOCK)
             {
-                usleep(100);
+                usleep(10 * 1000);
+                if(!_bRun)
+                    break;
                 onIdle();
                 continue;
             }
             else
             {
-                Log::GetInstance()->Write("Error while waiting for connection.", LOGLEVEL_INFO);
+                Log::GetInstance()->Write("Error while waiting for connection.", LOGLEVEL_WARN);
                 break;
             }
         }
         else
         {
-            if (_currThreads < _maxThreads)
+            if (getCurrThreads() < _maxThreads)
             {
-                Log::GetInstance()->Write("Accepting new connection.", LOGLEVEL_INFO);
+                Log::GetInstance()->Write("Accepting new connection.", LOGLEVEL_DEBUG);
                 onSetConnectionOption(connfd);
 
                 if (!createNewConnWorker(connfd))
@@ -175,7 +190,7 @@ void SignalRServer::run(int listenfd)
             else
             {
                 // Refuse this connection
-                Log::GetInstance()->Write("Refused connection.", LOGLEVEL_ERROR);
+                Log::GetInstance()->Write(("Refused connection. There are already that much threads: " + std::to_string(_maxThreads)).c_str(), LOGLEVEL_ERROR);
                 writeRetCode(connfd, 429, "Too many threads");
                 close(connfd);
             }
@@ -207,7 +222,7 @@ void SignalRServer::startTcp(int port)
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(port);
 
-    Log::GetInstance()->Write("Binding socket..", LOGLEVEL_INFO);
+    Log::GetInstance()->Write("Binding socket..", LOGLEVEL_DEBUG);
     ret = bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
     if (ret!=0)
     {
@@ -255,9 +270,26 @@ void SignalRServer::onSetConnectionOption(int connfd)
     ioctl(connfd, FIONBIO, &nonblock); // Set nonblocking option for the connection
 }
 
+void SignalRServer::clearCredentials()
+{
+    pthread_mutex_lock(&_credentials_lock);
+    for(UserCredential *u : _credentials)
+        delete u;
+    _credentials.clear();
+    pthread_mutex_unlock(&_credentials_lock);
+}
+
 
 bool SignalRServer::createNewConnWorker(int connfd)
 {
+    pthread_mutex_lock(&_lock_brun);
+
+    if(!_bRun) {
+        pthread_mutex_unlock(&_lock_brun);
+        return false;
+    }
+    pthread_mutex_unlock(&_lock_brun);
+
     PersistentConnection* conn;
     pthread_t th;
 
@@ -276,6 +308,11 @@ bool SignalRServer::createNewConnWorker(int connfd)
 
     // Start a new worker
     int rc = pthread_create(&th, NULL, requestThreadFunc, (void *)conn);
+    Log::GetInstance()->Write(("Creating new worker: " + std::to_string(rc)).c_str(), LOGLEVEL_DEBUG);
+
+    std::string str("SigRWrkTh" + std::to_string(connfd));
+    pthread_setname_np(th, str.c_str());
+
     if (rc!=0)
     {
         Log::GetInstance()->Write("Could not create thread.\n", LOGLEVEL_ERROR);
@@ -309,13 +346,18 @@ fdgfdgfdgklfdjgksdfgjklfdsjglfdgfdkgfdklgjfdklgjfdklgj
 void *SignalRServer::requestThreadFunc(void *data)
 {
     PersistentConnection* conn =  (PersistentConnection*)data;
+
+    if(!conn->server()->isRunning()) {
+        pthread_exit(NULL);
+        return 0;
+    }
+
     char recvbuf[MAX_READBUFFER];
     string req;
     size_t contentlength = 0;
     int bytesread;
     bool headerok=false;
     bool receive=true;
-    Request* request = NULL;
     string querystring;
     string body;
     string version;
@@ -332,13 +374,18 @@ void *SignalRServer::requestThreadFunc(void *data)
 
     conn->_server->inc(); // Increase the running thread counter
 
-
     time(&stimer);
 
     // The reception loop
     while (receive)
     {
+        if(!conn->server()->isRunning()) {
+            pthread_exit(NULL);
+            return 0;
+        }
+
         bytesread = read(conn->_connfd, recvbuf, sizeof(recvbuf));
+
         if (bytesread>0)
         {
             s.assign(recvbuf,bytesread);
@@ -361,6 +408,8 @@ void *SignalRServer::requestThreadFunc(void *data)
                 // Delete the header from buffer
                 size_t pos = req.find(HTTP_ENDOFHEADER)+4; // add 4 CRLFCRLF
                 req.erase(0, pos);
+
+                Log::GetInstance()->Write(recvbuf, LOGLEVEL_TRACE);
             }
 
             if (headerok && req.length()>=contentlength) // A full body ?
@@ -373,12 +422,14 @@ void *SignalRServer::requestThreadFunc(void *data)
 
                 Log::GetInstance()->Write("New request received for dispatching.", LOGLEVEL_DEBUG);
 
+                if(!conn->server()->isRunning()) {
+                    pthread_exit(NULL);
+                    return 0;
+                }
                 // Create a fine request and handle it
-                request = new Request(querystring, body, version, method, path, user, pwd);
-                conn->processRequest(request);
+                Request request(querystring, body, version, method, path, user, pwd);
 
-                delete request;
-                request=NULL;
+                conn->processRequest(&request);
 
                 headerok=false;
                 receive=false;
@@ -423,6 +474,7 @@ bool SignalRServer::startWatchdog()
         Log::GetInstance()->Write("Could not create watchdog thread.\n", LOGLEVEL_ERROR);
         return false;
     }
+    pthread_setname_np(_watchDogThread, "SigRWatchdog");
     return true;
 }
 
@@ -552,6 +604,15 @@ void *SignalRServer::wdThreadFunc(void *data)
     pthread_exit(NULL);
 }
 
+void SignalRServer::unlock_credentials()
+{
+    pthread_mutex_unlock(&_credentials_lock);
+}
+
+void SignalRServer::lock_credentials()
+{
+    pthread_mutex_lock(&_credentials_lock);
+}
 
 PersistentConnectionInfo* SignalRServer::findConnectionInfo(const char* connectionId)
 {
@@ -586,26 +647,28 @@ void SignalRServer::startConnectionInfo(const char* connectionId, PersistentConn
 
 void SignalRServer::stopConnectionInfo(const char* connectionId)
 {
+    lock_info();
     PersistentConnectionInfo* info = findConnectionInfo(connectionId);
     if (info)
     {
-        lock_info();
         _infos.remove(info); // remove the info
         delete info;
-        unlock_info();
         sem_post(&_sem_wd);
     }
+    unlock_info();
 }
 
 
 void SignalRServer::touchConnectionInfo(const char* connectionId, PersistentConnection* pc)
 {
+    lock_info();
     PersistentConnectionInfo* info = findConnectionInfo(connectionId);
     if (info)
     {
         info->addPersistentConnection(pc);
         info->reset();
     }
+    unlock_info();
 
     if (_currentWaitConnId==connectionId)
         sem_post(&_sem_wd);
@@ -614,11 +677,13 @@ void SignalRServer::touchConnectionInfo(const char* connectionId, PersistentConn
 
 void SignalRServer::removeConnectionInfo(const char* connectionId, PersistentConnection* pc)
 {
+    lock_info();
     PersistentConnectionInfo* info = findConnectionInfo(connectionId);
     if (info)
     {
         info->removePersistentConnection(pc);
     }
+    unlock_info();
 }
 
 
@@ -661,11 +726,16 @@ void SignalRServer::freePersistentConnections()
 bool SignalRServer::internalStop(int timeout_ms)
 {
     timespec timeout;
-
+    pthread_mutex_lock(&_lock_brun);
     _bRun = false; // Stop the main loop
+    pthread_mutex_unlock(&_lock_brun);
 
     clock_gettime(CLOCK_REALTIME, &timeout);
-    timeout.tv_nsec += 1000*timeout_ms; // wait max n ms before killing threads
+    timeout.tv_nsec += 1000 * 1000 * timeout_ms; // wait max n ms before killing threads
+    while (timeout.tv_nsec >= 1000000000) {
+        timeout.tv_sec += 1;
+        timeout.tv_nsec -= 1000000000;
+    }
 
     int rc = sem_timedwait(&_sem_quit, &timeout); // Wait for end of main loop
     if (rc!=0)
@@ -686,17 +756,17 @@ bool SignalRServer::stop(int timeout_ms)
     }
 
     // Loop thru all subscribers and signal to top
-    Log::GetInstance()->Write("Terminate subscribers...",LOGLEVEL_INFO);
+    Log::GetInstance()->Write("Terminate subscribers...",LOGLEVEL_DEBUG);
     for (Subscriber * sub : Hub::getHubManager().getSubscribers())
     {
-        sub->signalSemaphore();
+        sub->signalSemaphores();
     }
 
     clock_gettime(CLOCK_REALTIME, &timeout);
     timeout.tv_nsec += 1000*timeout_ms; // wait max n ms before killing threads
 
     // Stop the watchdog thread and wait for destruction
-    Log::GetInstance()->Write("Terminate watchdog thread...",LOGLEVEL_INFO);
+    Log::GetInstance()->Write("Terminate watchdog thread...",LOGLEVEL_DEBUG);
 
     sem_post(&_sem_wd);
     rc = pthread_timedjoin_np(_watchDogThread,NULL,&timeout);
@@ -706,7 +776,7 @@ bool SignalRServer::stop(int timeout_ms)
     }
 
     // Wait for the remaining connection threads
-    Log::GetInstance()->Write("Terminate worker threads...",LOGLEVEL_INFO);
+    Log::GetInstance()->Write("Terminate worker threads...",LOGLEVEL_DEBUG);
 
     lock_conn();
     for(PersistentConnection* c : _connections)
@@ -750,6 +820,11 @@ SignalRHubServer::~SignalRHubServer()
 {
     if (_hubFactory)
         delete _hubFactory;
+}
+
+void SignalRHubServer::setResponseDelayTimeout(int delayMs)
+{
+   _connFactory->setRepsonseDelay(delayMs);
 }
 
 Hub* SignalRHubServer::createHub(const char* hubName, PersistentConnection* conn, Request* r)

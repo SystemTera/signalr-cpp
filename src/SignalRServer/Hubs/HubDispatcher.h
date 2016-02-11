@@ -40,7 +40,7 @@ class Request;
 class HubDispatcher : public PersistentConnection
 {
 public:
-    HubDispatcher();
+    HubDispatcher(int responseDelyMs=0);
     virtual ~HubDispatcher();
 
 public:
